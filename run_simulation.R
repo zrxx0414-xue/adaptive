@@ -8,15 +8,11 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
     n_train = 200L, n_test = 200L, repetitions = 500L, basis = "adaptive",
     kernel_bw = "adaptive", dim_basis = "adaptive", predictor_distribution = "Normal",
     error_distribution = "Normal", test_seed = 4100L, training_seed = 42L, alpha = 0.05, maxit = 2000L,
-    snr_by = c("error_variance", "coefficient", "predictor_variance"),
-    coefficient = 1, predictor_variance = 1, error_variance = 1, additional_effect_size = NULL,
-    save_simulated_data = FALSE) {
-    snr_by <- match.arg(snr_by)
+    additional_effect_size = NULL, save_simulated_data = FALSE) {
     truth <- match.arg(truth, truth_levels)
     structure <- match.arg(structure, structure_levels)
-    controls <- c(snr, coefficient, predictor_variance, error_variance)
-    if (length(controls) != 4L || any(!is.finite(controls) | controls <= 0))
-        stop("snr, coefficient, predictor_variance and error_variance must be positive finite numbers.")
+    if (!is.numeric(snr) || length(snr) != 1L || !is.finite(snr) || snr <= 0)
+        stop("snr must be a positive finite number.")
     if (!is.null(additional_effect_size) &&
         (!is.numeric(additional_effect_size) || length(additional_effect_size) != 1L || !is.finite(additional_effect_size)))
         stop("additional_effect_size must be a finite number.")
@@ -33,8 +29,8 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
 
     for (i in seq_len(repetitions)) {
         x_train <- generate_predictors(n_train, predictor_distribution)
-        data <- generate_experiment(x_train, x_test, structure, truth, snr, snr_by,
-                                    coefficient, predictor_variance, error_variance, error_distribution, additional_effect_size)
+        data <- generate_experiment(x_train, x_test, structure, truth, snr, snr_by = "error_variance",
+            error_distribution = error_distribution, additional_effect_size = additional_effect_size)
         parameters[[i]] <- data$parameters
         if (save_simulated_data)
             simulated_data[[i]] <- list(train = data$train, test = data$test)
@@ -53,7 +49,7 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
 
     parameters <- bind_rows(parameters) |> mutate(replicate = row_number())
     raw <- bind_rows(results) |> left_join(parameters, by = "replicate") |>
-        mutate(structure = structure, truth = truth, snr = snr, snr_by = snr_by,
+        mutate(structure = structure, truth = truth, snr = snr,
                n_train = n_train, n_test = n_test, error_sd = sqrt(error_variance), correct = decision == truth)
     summary <- raw |> group_by(method) |>
         summarise(valid_runs = sum(valid), invalid_runs = sum(!valid),
@@ -65,8 +61,8 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
         count(outcome, name = "runs") |> mutate(proportion = runs / sum(runs))
     error_summary <- raw |> filter(method == "DRM", !valid) |>
         count(failure_stage, error_type, error_message, name = "runs")
-    settings <- list(structure = structure, truth = truth, snr = snr, snr_by = snr_by,
-        coefficient = coefficient, predictor_variance = predictor_variance, error_variance = error_variance,
+    settings <- list(structure = structure, truth = truth, snr = snr,
+        coefficient = 1, predictor_variance = 1,
         snr_definition = "Full signal sample variance / error sample variance, conditional on training design",
         test_response = "Noiseless true signal; same DGP parameters as the corresponding training sample",
         n_train = n_train, n_test = n_test, repetitions = repetitions, basis = basis,
