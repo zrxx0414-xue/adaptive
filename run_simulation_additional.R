@@ -5,29 +5,39 @@ source("benchmark_aic_bic.R")
 source("adaptive_basis.R")
 library(dplyr)
 
-# Old additional-SNR DGP: shared coefficient 1, additional coefficient sqrt(snr), error variance 1.
-generate_additional_experiment <- function(x_train, x_test, structure, truth, snr, error_distribution) {
-  gamma <- if (truth == "M2") sqrt(snr) else 0
+# Fix the signal coefficients and calibrate error variance on the training design.
+generate_additional_experiment <- function(x_train, x_test, structure, truth, snr, error_distribution,
+                                           additional_effect_size = 1) {
+  gamma <- if (truth == "M2") additional_effect_size else 0
   train <- x_train
   test <- x_test
   extra <- gamma * additional_component(train, structure)
   mu <- shared_signal(train, structure) + extra
-  train$y <- mu + standardised_random(nrow(train), error_distribution)
+  signal_variance <- var(mu)
+  error_variance <- signal_variance / snr
+  if (!is.finite(error_variance) || error_variance <= 0)
+    stop("The training signal and target snr must yield a positive finite error variance.")
+  train$y <- mu + sqrt(error_variance) * standardised_random(nrow(train), error_distribution)
   test$y <- shared_signal(test, structure) + gamma * additional_component(test, structure)
   parameters <- data.frame(shared_coefficient = 1, additional_coefficient = gamma,
-                           predictor_variance = 1, error_variance = 1, train_signal_variance = var(mu),
-                           achieved_snr = var(mu), achieved_additional_snr = var(extra))
+                           predictor_variance = 1, error_variance = error_variance,
+                           train_signal_variance = signal_variance, achieved_snr = signal_variance / error_variance,
+                           additional_signal_variance = var(rep_len(extra, nrow(train))))
   list(train = train, test = test, parameters = parameters)
 }
 
 run_linear_simulation_additional <- function(structure = "Additional main effects", truth = "M2", snr = 1,
                                              n_train = 200L, n_test = 200L, repetitions = 500L, basis = "adaptive",
                                              kernel_bw = "adaptive", dim_basis = "adaptive", predictor_distribution = "Normal",
-                                             error_distribution = "Normal", test_seed = 4100L, training_seed = 42L, alpha = 0.05, maxit = 2000L) {
-  snr_by <- "additional_coefficient"
+                                             error_distribution = "Normal", test_seed = 4100L, training_seed = 42L, alpha = 0.05, maxit = 2000L,
+                                             additional_effect_size = 1) {
+  snr_by <- "error_variance"
   truth <- match.arg(truth, truth_levels)
   structure <- match.arg(structure, structure_levels)
-  if (length(snr) != 1L || !is.finite(snr) || snr < 0) stop("snr must be a finite nonnegative number.")
+  if (!is.numeric(snr) || length(snr) != 1L || !is.finite(snr) || snr <= 0)
+    stop("snr must be a positive finite number.")
+  if (!is.numeric(additional_effect_size) || length(additional_effect_size) != 1L || !is.finite(additional_effect_size))
+    stop("additional_effect_size must be a finite number.")
   simulation_start <- proc.time()[["elapsed"]]
   complexity <- candidate_parameter_count(structure)
   set.seed(test_seed)
@@ -38,7 +48,8 @@ run_linear_simulation_additional <- function(structure = "Additional main effect
   
   for (i in seq_len(repetitions)) {
     x_train <- generate_predictors(n_train, predictor_distribution)
-    data <- generate_additional_experiment(x_train, x_test, structure, truth, snr, error_distribution)
+    data <- generate_additional_experiment(x_train, x_test, structure, truth, snr, error_distribution,
+                                           additional_effect_size = additional_effect_size)
     parameters[[i]] <- data$parameters
     models <- fit_candidate_models(data$train, structure)
     prediction_1 <- as.numeric(predict(models$M1, newdata = data$test))
@@ -61,7 +72,7 @@ run_linear_simulation_additional <- function(structure = "Additional main effect
   
   parameters <- bind_rows(parameters) |> mutate(replicate = row_number())
   raw <- bind_rows(results) |> left_join(parameters, by = "replicate") |>
-    mutate(structure = structure, truth = truth, snr = snr, snr_by = snr_by,
+    mutate(structure = structure, truth = truth, snr = snr, snr_by = snr_by, additional_effect_size = additional_effect_size,
            n_train = n_train, n_test = n_test, error_sd = sqrt(error_variance), correct = decision == truth)
   summary <- raw |> group_by(method) |>
     summarise(valid_runs = sum(valid), invalid_runs = sum(!valid),
@@ -73,10 +84,10 @@ run_linear_simulation_additional <- function(structure = "Additional main effect
     count(outcome, name = "runs") |> mutate(proportion = runs / sum(runs))
   error_summary <- raw |> filter(method == "DRM", !valid) |>
     count(failure_stage, error_type, error_message, name = "runs")
-  settings <- list(structure = structure, truth = truth, snr = snr, snr_by = snr_by,
-                   shared_coefficient = 1, additional_coefficient = if (truth == "M2") sqrt(snr) else 0,
-                   predictor_variance = 1, error_variance = 1,
-                   snr_definition = "Nominal additional SNR: gamma = sqrt(snr), unit error variance; gamma = 0 under M1",
+  settings <- list(structure = structure, truth = truth, snr = snr, snr_by = snr_by, additional_effect_size = additional_effect_size,
+                   shared_coefficient = 1, additional_coefficient = if (truth == "M2") additional_effect_size else 0,
+                   predictor_variance = 1,
+                   snr_definition = "Full signal sample variance / error sample variance, conditional on training design",
                    test_response = "Noiseless true signal; same DGP parameters as the corresponding training sample",
                    n_train = n_train, n_test = n_test, repetitions = repetitions, basis = basis,
                    kernel_bw = kernel_bw, dim_basis = dim_basis, predictor_distribution = predictor_distribution,
