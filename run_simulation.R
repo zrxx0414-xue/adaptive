@@ -9,13 +9,16 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
     kernel_bw = "adaptive", dim_basis = "adaptive", predictor_distribution = "Normal",
     error_distribution = "Normal", test_seed = 4100L, training_seed = 42L, alpha = 0.05, maxit = 2000L,
     snr_by = c("error_variance", "coefficient", "predictor_variance"),
-    coefficient = 1, predictor_variance = 1, error_variance = 1) {
+    coefficient = 1, predictor_variance = 1, error_variance = 1, additional_effect_size = NULL) {
     snr_by <- match.arg(snr_by)
     truth <- match.arg(truth, truth_levels)
     structure <- match.arg(structure, structure_levels)
     controls <- c(snr, coefficient, predictor_variance, error_variance)
     if (length(controls) != 4L || any(!is.finite(controls) | controls <= 0))
         stop("snr, coefficient, predictor_variance and error_variance must be positive finite numbers.")
+    if (!is.null(additional_effect_size) &&
+        (!is.numeric(additional_effect_size) || length(additional_effect_size) != 1L || !is.finite(additional_effect_size)))
+        stop("additional_effect_size must be a finite number.")
     simulation_start <- proc.time()[["elapsed"]]
     complexity <- candidate_parameter_count(structure)
     set.seed(test_seed)
@@ -26,7 +29,7 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
     for (i in seq_len(repetitions)) {
         x_train <- generate_predictors(n_train, predictor_distribution)
         data <- generate_experiment(x_train, x_test, structure, truth, snr, snr_by,
-                                    coefficient, predictor_variance, error_variance, error_distribution)
+                                    coefficient, predictor_variance, error_variance, error_distribution, additional_effect_size)
         parameters[[i]] <- data$parameters
         models <- fit_candidate_models(data$train, structure)
         prediction_1 <- as.numeric(predict(models$M1, newdata = data$test))
@@ -63,6 +66,8 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
         kernel_bw = kernel_bw, dim_basis = dim_basis, predictor_distribution = predictor_distribution,
         error_distribution = error_distribution, test_seed = test_seed, training_seed = training_seed,
         alpha = alpha, maxit = maxit)
+    if (!is.null(additional_effect_size))
+        settings$additional_effect_size <- additional_effect_size
     runtime <- list(total_seconds = proc.time()[["elapsed"]] - simulation_start,
                     drm_total_seconds = sum(raw$runtime_seconds[raw$method == "DRM"]),
                     drm_mean_seconds = mean(raw$runtime_seconds[raw$method == "DRM"]))
