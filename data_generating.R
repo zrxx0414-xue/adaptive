@@ -33,20 +33,21 @@ additional_component <- function(data, structure) {
         "Additional interaction term" = data$x1 * data$x2)
 }
 
-# With an explicit effect size, coefficient scales only the shared signal.
 generate_signal <- function(data, structure, truth, additional_effect_size = 1) {
     extra <- if (truth == "M2") additional_component(data, structure) else 0
-    1 +  shared + additional_effect_size * extra
+    shared_signal(data, structure) + additional_effect_size * extra
 }
 
 # Calibrate on the training design; apply the SAME parameters to the test design.
 generate_experiment <- function(train, test, structure, truth, snr,
-                                error_variance = 1, error_distribution = "Normal", additional_effect_size = 1) {
-    error_variance <- var(signal_at(generate_signal(train, structure, truth, additional_effect_size))) / snr
+                                error_distribution = "Normal", additional_effect_size = 1) {
     mu <- generate_signal(train, structure, truth, additional_effect_size)
+    signal_variance <- var(mu)
+    error_variance <- signal_variance / snr
     train$y <- mu + sqrt(error_variance) * standardised_random(nrow(train), error_distribution)
     test$y <- generate_signal(test, structure, truth, additional_effect_size)
-    list(train = train, test = test)
+    parameters <- data.frame(error_variance = error_variance, achieved_snr = signal_variance / error_variance)
+    list(train = train, test = test, parameters = parameters)
 }
 
 fit_candidate_models <- function(data, structure) {
