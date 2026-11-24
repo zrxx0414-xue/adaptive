@@ -5,7 +5,7 @@ result <- run_linear_simulation(
     n_train = 200, n_test = 200, repetitions = 500,
     basis = "adaptive", kernel_bw = "adaptive", dim_basis = 1,
     predictor_distribution = "Normal", error_distribution = "Normal",
-    test_seed = 4100, training_seed = 42, save_simulated_data = FALSE
+    test_seed = 4100, training_seed = 42, save_drm_data = FALSE
 )
 
 # For manual bandwidths: kernel_bw = 0.5 or c(0.5, 0.3, 0.5).
