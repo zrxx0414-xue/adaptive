@@ -27,8 +27,8 @@ shared_signal <- function(data, structure) {
 
 additional_component <- function(data, structure) {
     switch(structure,
-        "Additional main effects" = (data$x2 + data$x3) / sqrt(2),
-        "Additional quadratic term" = (data$x1^2 - 1) / sqrt(2),
+        "Additional main effects" = data$x2 + data$x3,
+        "Additional quadratic term" = data$x1^2 - 1,
         "Additional interaction term" = data$x1 * data$x2)
 }
 
