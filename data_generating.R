@@ -40,46 +40,13 @@ generate_signal <- function(data, structure, truth, additional_effect_size = 1) 
 }
 
 # Calibrate on the training design; apply the SAME parameters to the test design.
-generate_experiment <- function(x_train, x_test, structure, truth, snr, snr_by,
-                                coefficient = 1, predictor_variance = 1, error_variance = 1,
-                                error_distribution = "Normal", additional_effect_size = NULL) {
-    signal_at <- function(v) {
-        generate_signal(x_train * sqrt(v), structure, truth, coefficient, additional_effect_size)
-    }
-    if (snr_by == "error_variance") {
-        error_variance <- var(signal_at(predictor_variance)) / snr
-    } else if (snr_by == "coefficient" && !is.null(additional_effect_size) && truth == "M2") {
-        design <- x_train * sqrt(predictor_variance)
-        shared <- shared_signal(design, structure)
-        extra <- additional_effect_size * additional_component(design, structure)
-        shared_variance <- var(shared)
-        # Complete the square in Var(coefficient * shared + extra).
-        offset <- cov(shared, extra) / shared_variance
-        residual_variance <- var(extra - offset * shared)
-        squared_distance <- (snr * error_variance - residual_variance) / shared_variance
-        coefficient <- sqrt(max(0, squared_distance)) - offset
-        if (!is.finite(coefficient) || squared_distance < 0 || coefficient <= 0)
-            stop("The target snr is unattainable with this additional_effect_size and a positive shared coefficient.")
-    } else if (snr_by == "coefficient") {
-        unit_signal <- generate_signal(x_train * sqrt(predictor_variance), structure, truth, 1)
-        coefficient <- sqrt(snr * error_variance / var(unit_signal))
-    } else {
-        # Nonlinear terms mean signal variance is not simply proportional to Var(X).
-        target <- snr * error_variance
-        upper <- 1
-        while (var(signal_at(upper)) < target) upper <- 2 * upper
-        predictor_variance <- uniroot(function(v) var(signal_at(v)) - target,
-                                     interval = c(0, upper), tol = 1e-10)$root
-    }
-    train <- x_train * sqrt(predictor_variance)
-    test <- x_test * sqrt(predictor_variance)
-    mu <- generate_signal(train, structure, truth, coefficient, additional_effect_size)
+generate_experiment <- function(train, test, structure, truth, snr,
+                                error_variance = 1, error_distribution = "Normal", additional_effect_size = 1) {
+    error_variance <- var(signal_at(generate_signal(train, structure, truth, additional_effect_size))) / snr
+    mu <- generate_signal(train, structure, truth, additional_effect_size)
     train$y <- mu + sqrt(error_variance) * standardised_random(nrow(train), error_distribution)
-    test$y <- generate_signal(test, structure, truth, coefficient, additional_effect_size)
-    parameters <- data.frame(coefficient = coefficient, predictor_variance = predictor_variance,
-                             error_variance = error_variance, train_signal_variance = var(mu),
-                             achieved_snr = var(mu) / error_variance)
-    list(train = train, test = test, parameters = parameters)
+    test$y <- generate_signal(test, structure, truth, additional_effect_size)
+    list(train = train, test = test)
 }
 
 fit_candidate_models <- function(data, structure) {
