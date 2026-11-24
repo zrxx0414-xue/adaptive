@@ -1,7 +1,7 @@
 # Linear regression simulation and model selection.
 
 library(drmdel)
-
+#pre-specified basis
 default_basis_functions <- function() {
     list(`q(y) = (y)` = list(d = 1L, fun = function(y) c(y = y)), `q(y) = (y^2)` = list(d = 1L, fun = function(y) c(y2 = y^2)), 
         `q(y) = (y, y^2)` = list(d = 2L, fun = function(y) c(y = y, y2 = y^2)), `q(y) = (y, y^2, y^3)` = list(d = 3L, 
@@ -11,7 +11,7 @@ default_basis_functions <- function() {
 quadratic_form <- function(vector, covariance, scale) {
     scale * drop(t(vector) %*% solve(covariance, vector))
 }
-
+#drm converge or not after 'maxit' iterations
 diagnostic_drmdel <- function(x, n_samples, basis_func, control, diagnostics) {
     fitter <- drmdel::drmdel
     local_environment <- new.env(parent = environment(fitter))
