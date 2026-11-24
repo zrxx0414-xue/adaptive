@@ -21,7 +21,7 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
 
     for (i in seq_len(repetitions)) {
         data <- generate_experiment(generate_predictors(n_train, predictor_distribution), x_test,
-            structure, truth, snr, snr_by = "error_variance",
+            structure, truth, snr,
             error_distribution = error_distribution, additional_effect_size = additional_effect_size)
         parameters[[i]] <- data$parameters
         models <- fit_candidate_models(data$train, structure)
@@ -57,7 +57,7 @@ run_linear_simulation <- function(structure = "Additional main effects", truth =
     error_summary <- drm_raw |> filter(!valid) |>
         count(failure_stage, error_type, error_message, name = "runs")
 
-    settings <- c(list(structure = structure, truth = truth, snr = snr,
+    settings <- list(structure = structure, truth = truth, snr = snr,
         n_train = n_train, n_test = n_test, repetitions = repetitions, basis = basis,
         kernel_bw = kernel_bw, dim_basis = dim_basis, predictor_distribution = predictor_distribution,
         error_distribution = error_distribution, test_seed = test_seed, training_seed = training_seed,
