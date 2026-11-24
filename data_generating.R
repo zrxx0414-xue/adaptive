@@ -32,19 +32,36 @@ additional_component <- function(data, structure) {
         "Additional interaction term" = data$x1 * data$x2)
 }
 
-# coefficient scales the complete non-intercept signal; M1 omits the additional term.
-generate_signal <- function(data, structure, truth, coefficient = 1) {
+# With an explicit effect size, coefficient scales only the shared signal.
+generate_signal <- function(data, structure, truth, coefficient = 1, additional_effect_size = NULL) {
     extra <- if (truth == "M2") additional_component(data, structure) else 0
-    1 + coefficient * (shared_signal(data, structure) - 1 + extra)
+    shared <- shared_signal(data, structure) - 1
+    if (is.null(additional_effect_size))
+        return(1 + coefficient * (shared + extra))
+    1 + coefficient * shared + additional_effect_size * extra
 }
 
 # Calibrate on the training design; apply the SAME parameters to the test design.
 generate_experiment <- function(x_train, x_test, structure, truth, snr, snr_by,
                                 coefficient = 1, predictor_variance = 1, error_variance = 1,
-                                error_distribution = "Normal") {
-    signal_at <- function(v) generate_signal(x_train * sqrt(v), structure, truth, coefficient)
+                                error_distribution = "Normal", additional_effect_size = NULL) {
+    signal_at <- function(v) {
+        generate_signal(x_train * sqrt(v), structure, truth, coefficient, additional_effect_size)
+    }
     if (snr_by == "error_variance") {
         error_variance <- var(signal_at(predictor_variance)) / snr
+    } else if (snr_by == "coefficient" && !is.null(additional_effect_size) && truth == "M2") {
+        design <- x_train * sqrt(predictor_variance)
+        shared <- shared_signal(design, structure)
+        extra <- additional_effect_size * additional_component(design, structure)
+        shared_variance <- var(shared)
+        # Complete the square in Var(coefficient * shared + extra).
+        offset <- cov(shared, extra) / shared_variance
+        residual_variance <- var(extra - offset * shared)
+        squared_distance <- (snr * error_variance - residual_variance) / shared_variance
+        coefficient <- sqrt(max(0, squared_distance)) - offset
+        if (!is.finite(coefficient) || squared_distance < 0 || coefficient <= 0)
+            stop("The target snr is unattainable with this additional_effect_size and a positive shared coefficient.")
     } else if (snr_by == "coefficient") {
         unit_signal <- generate_signal(x_train * sqrt(predictor_variance), structure, truth, 1)
         coefficient <- sqrt(snr * error_variance / var(unit_signal))
@@ -58,9 +75,9 @@ generate_experiment <- function(x_train, x_test, structure, truth, snr, snr_by,
     }
     train <- x_train * sqrt(predictor_variance)
     test <- x_test * sqrt(predictor_variance)
-    mu <- generate_signal(train, structure, truth, coefficient)
+    mu <- generate_signal(train, structure, truth, coefficient, additional_effect_size)
     train$y <- mu + sqrt(error_variance) * standardised_random(nrow(train), error_distribution)
-    test$y <- generate_signal(test, structure, truth, coefficient)
+    test$y <- generate_signal(test, structure, truth, coefficient, additional_effect_size)
     parameters <- data.frame(coefficient = coefficient, predictor_variance = predictor_variance,
                              error_variance = error_variance, train_signal_variance = var(mu),
                              achieved_snr = var(mu) / error_variance)
